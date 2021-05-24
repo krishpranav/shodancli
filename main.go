@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -109,4 +111,87 @@ func readDefaultQuery(defPath string) (string, error) {
 
 	return defQuery, nil
 
+}
+
+func main() {
+	apiKey := ""
+
+	switch {
+	case os.Getenv("SHODAN_KEY") != "":
+		apiKey = os.Getenv("SHODAN_KEY")
+	case os.Getenv("SHODAN") != "":
+		apiKey = os.Getenv("SHODAN")
+	}
+
+	if apiKey == "" {
+		fmt.Printf("Missing $SHODAN_KEY API key\n export SHODAN_KEY=xxxxx...\n")
+		os.Exit(0)
+	}
+
+	defPath := ".shoddanrc"
+	defQuery := ""
+
+	query, net, ip, compact := parseArgs()
+
+	if net == "" && ip == "" {
+		defQuery, _ = readDefaultQuery(defPath)
+	}
+	if defQuery != "" {
+		fmt.Printf("Default query from file %s:\n %s\n", defPath, defQuery)
+		query += ` ` + defQuery
+	}
+	if net != "" {
+		query = "net:" + net
+	}
+
+	client := shodan.NewClient(nil, apiKey)
+
+	// Print only one IP
+	if ip != "" {
+		h, er := client.GetServicesForHost(context.Background(), ip, nil)
+		if er != nil {
+			fmt.Println("Error:", er)
+		} else {
+			for j, hd := range h.Data {
+				printHost(j, hd)
+				if compact == false {
+					prettyJSON, _ := json.MarshalIndent(hd, "", "\t")
+					fmt.Println(string(prettyJSON))
+				} else {
+					fmt.Printf("--\n%+v\n--\n", hd.Data)
+				}
+			}
+			fmt.Println("Maybe more details with:")
+			fmt.Println(au.Bold(au.Sprintf(" curl https://api.shodan.io/shodan/host/%s?key=$SHODAN_KEY | jq '.'\n", ip)))
+		}
+		os.Exit(0)
+	}
+
+	// Build query
+	a := &shodan.HostQueryOptions{Query: query} //first query "org: Company port: ....."
+	log.Printf("%+v\n", a)
+
+	// Count
+	r, e := client.GetHostsCountForQuery(context.Background(), a)
+	if e != nil {
+		fmt.Println("Error GetHostsCountForQuery:", e)
+		os.Exit(0)
+	}
+	log.Println(r.Total)
+
+	// Query
+	res, err := client.GetHostsForQuery(context.Background(), a)
+	if err != nil {
+		fmt.Println("Error HostsForQuery:", err)
+		os.Exit(0)
+	}
+	log.Println(res.Total)
+
+	// Print results
+	for j := range res.Matches {
+		printHost(j, res.Matches[j])
+		if net != "" && compact == false { // for net query only
+			fmt.Printf("--\n%+v\n--\n", res.Matches[j].Data)
+		}
+	}
 }
