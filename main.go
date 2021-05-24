@@ -2,8 +2,6 @@ package main
 
 import (
 	"bufio"
-	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -81,4 +79,34 @@ func printHost(j int, h *shodan.HostData) {
 	if len(h.OS) > 0 || len(h.Hostnames) > 0 || len(cpe) > 0 {
 		fmt.Println()
 	}
+}
+
+func readDefaultQuery(defPath string) (string, error) {
+	defQuery := ""
+
+	file, err := os.Open(defPath)
+	if err != nil {
+		fmt.Println("Enter default query [org:\"some Org\"] : ")
+		reader := bufio.NewReader(os.Stdin)
+		defQuery, _ = reader.ReadString('\n')
+		defQuery = strings.TrimSuffix(defQuery, "\n")
+
+		file, err = os.Create(defPath)
+		if err != nil {
+			log.Panic(err)
+		}
+		w := bufio.NewWriter(file)
+		fmt.Fprintln(w, defQuery)
+		w.Flush()
+
+	} else {
+		s := bufio.NewScanner(file)
+		for s.Scan() {
+			defQuery = s.Text()
+		}
+	}
+	defer file.Close()
+
+	return defQuery, nil
+
 }
